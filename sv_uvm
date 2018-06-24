@@ -1,0 +1,31 @@
+#!/usr/bin/csh
+
+rm -rf result*.txt
+source /apps/set_license
+
+setenv VCS_HOME /apps/synopsys/VCSMX
+source ${VCS_HOME}/bin/environ.csh
+setenv UVM_HOME /home/morris/uvm-1.2
+echo ${UVM_HOME}
+vcs -sverilog -timescale=1ns/1ns +acc +vpi +define+UVM_OBJECT_MUST_HAVE_CONSTRUCTOR +incdir+${UVM_HOME}/src ${UVM_HOME}/src/uvm.sv ${UVM_HOME}/src/dpi/uvm_dpi.cc -CFLAGS -DVCS $argv
+if ($status != 0) exit $status
+./simv +tname=t0.txt|tee result0.txt
+./simv +tname=t1.txt|tee result1.txt
+./simv +tname=t2.txt|tee result2.txt
+./simv +tname=t3.txt|tee result3.txt
+./simv +tname=t4.txt|tee result4.txt
+./simv +tname=t5.txt|tee result5.txt
+./simv +tname=t6.txt|tee result6.txt
+./simv +tname=t7.txt|tee result7.txt
+./simv +tname=t8.txt|tee result8.txt
+./simv +tname=t9.txt|tee result9.txt
+./simv +tname=t10.txt|tee result10.txt
+./simv +tname=t11.txt|tee result11.txt
+./simv +tname=t12.txt|tee result12.txt
+./simv +tname=t13.txt|tee result13.txt
+./simv +tname=t14.txt|tee result14.txt
+./simv +tname=t15.txt|tee result15.txt
+
+grep  "Error" result*.txt > Error.txt
+grep -l Error result*.txt > Error_file.txt
+sed -i 's/result/t/g' Error_file.txt

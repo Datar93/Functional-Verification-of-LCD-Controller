@@ -1,0 +1,541 @@
+/***************************************************************************************************************************************
+* PROJECT NAME: LCD CONTROLLER TESTBENCH     DATE:12/01/2017
+* CREATED BY: SARVESH DATAR, SHYAM REKHAWAR, MANC WARDE
+* DESCRIPTION: THIS TESTBENCH ACTS AS MEMORY MODULE FOR THE DUT AND ALSO AS MASTER FOR LADING THE CONFIGURATION REGISTERS OF THE DUT
+*              THE TESTBENCH CHECKS THE FUNCTIONALITY OF LCD CONTROLLER.
+***************************************************************************************************************************************/
+package lcd_pkg;
+
+import uvm_pkg::*;
+
+class lcd_seq_item extends uvm_sequence_item;
+
+`uvm_object_utils(lcd_seq_item)
+
+    // defining the queues to store the address and data
+    //m signifies variable for memory and w signifies variable for configuration register.
+    typedef int maddress;
+    
+    logic [31:0]waddress[$];
+    logic [31:0]mdata[maddress];
+    logic [31:0]wdata[$];
+    logic eof,eos;
+    logic [31:0]exp_data[$];
+    logic [31:0]act_data;
+    logic pushout;
+    logic frame_chk;
+    int count_fp;
+    int count;
+    function new(string name = "");
+        super.new(name);
+    endfunction : new
+    
+
+endclass : lcd_seq_item
+
+class lcd_sequence_1 extends uvm_sequence #(lcd_seq_item);
+
+`uvm_object_utils(lcd_sequence_1)
+    lcd_seq_item l_sq; // declaring seq_iem handle
+    int fh,l;
+    reg done;
+    string ln,cd,tname;
+    reg [31:0] adr,dat;
+    function new (string name = "") ;
+        super.new(name);
+    endfunction: new
+    int count;
+    task body();
+    $value$plusargs("tname=%s",tname);
+       fh = $fopen(tname,"r"); 
+       done = 0;
+       count = 0;
+       l_sq = new("l_sq");
+       start_item(l_sq);
+       while(!done) begin
+             
+            cd ="q";
+            l=$fgets(ln,fh);
+            l=$sscanf(ln,"%s %h %h",cd,adr,dat);
+            if(cd=="q") begin
+                done=1;
+            finish_item(l_sq);
+               `uvm_info("READ_FILE_FINISH",$sformatf("finished reading file %s",tname),UVM_LOW) 
+               
+            end else if (cd == "m") begin
+
+                l_sq.mdata[adr]=dat;
+                //`uvm_info("MEMORY READ FILE",$sformatf("maddress = %h mdata = %h",adr,l_sq.mdata[adr]),UVM_LOW)
+            end 
+            
+        end
+        
+       
+        
+    endtask: body
+    
+
+endclass : lcd_sequence_1
+
+class lcd_sequencer extends uvm_sequencer #(lcd_seq_item);
+    `uvm_component_utils(lcd_sequencer)
+    
+    function new(string name , uvm_component parent = null);
+        super.new(name,parent);
+    endfunction : new
+endclass : lcd_sequencer
+
+class lcd_driver_1 extends uvm_driver#(lcd_seq_item);
+    `uvm_component_utils(lcd_driver_1)
+    
+    virtual AHBIF Q;
+    
+    lcd_seq_item l_sq;
+    logic [31:0]count ;
+    
+    
+    function new (string name , uvm_component parent = null);
+        super.new(name,parent);
+    endfunction : new
+    
+    function void build_phase(uvm_phase phase);
+        super.build_phase(phase);
+    endfunction: build_phase
+    
+    function void connect_phase(uvm_phase phase);
+        // geting configuration database for connection of interface
+        
+        if(!uvm_config_db #(virtual AHBIF)::get(null, "*", "AHBIF" , Q)) begin
+                `uvm_error(get_name(), "Virtual Interface for driver not set!")
+                $display("failed to connect the interface 3");
+        end
+    endfunction : connect_phase
+    
+    task memory;
+       
+       
+              @ (posedge Q.HCLK); // at posedge granting GRANT
+                if(this.Q.mHBUSREQ) begin
+                    this.Q.mHGRANT<= #1 1; //// Granting the DUT access
+                    this.Q.mHREADY <= #1 1; // TEST BENCH Ready for transaction
+                end else begin
+                        
+                            this.Q.mHGRANT <= #1 0;// NO BUSREQUEST NO GRANT
+                            
+                            this.Q.mHREADY <= #1 0;
+
+                end
+
+                    
+                  
+    endtask : memory
+    
+    task memory1;
+//            
+                if(this.Q.mHGRANT) begin
+                if(l_sq.mdata.exists(Q.mHADDR))begin    // check if the data exist in the slave memory
+                                 
+                                if((this.Q.mHTRANS == 2 || this.Q.mHTRANS == 3)&& !this.Q.mHWRITE) begin
+                // checking if the HTRANS  is Non sequential or sequemtial indicating begining of transcation//
+                                    
+                                    this.Q.mHRDATA <= #1 l_sq.mdata[Q.mHADDR];// reading data from the address
+                                end else begin
+                                    
+                                    this.Q.mHRDATA <= #1 32'd2; // Address not present then sending dummy data
+                                end
+                                this.Q.mHRESP <= #1 0;
+                                //`uvm_info("MEMORY",$sformatf("%m: %t mHADDR = %h mHRDATA= %h",$time,Q.mHADDR,Q.mHRDATA),UVM_HIGH)
+                    end else begin
+                        this.Q.mHGRANT<= #1 1; // Granting the DUT access
+                        this.Q.mHRDATA <= #1 32'd3;// reading data from the address
+                        this.Q.mHRESP <= #1 0;
+                        // `uvm_info("MEMORY",$sformatf("%m: %t mHADDR = %h mHRDATA= %h",$time,Q.mHADDR,Q.mHRDATA),UVM_HIGH)
+                    end
+                end else begin
+                        this.Q.mHRDATA <= #1 32'd0;
+                end
+    endtask : memory1
+    
+   
+    task run_phase(uvm_phase phase);
+        `uvm_info( get_name(), $sformatf("HIERARCHY: %m"), UVM_HIGH);
+        l_sq=new("l_sq");
+        seq_item_port.get_next_item(l_sq);
+            //reseting the master signals
+            `uvm_info("DRIVER","Reseting the DUT",UVM_LOW)
+            //reseting the slave signals
+            this.Q.mHRDATA= #1 0;
+            this.Q.mHGRANT= #1 0;
+            this.Q.mHREADY= #1 0;
+            this.Q.mHRESP= #1 0;
+//             this.Q.HBURST = #1 0;
+            repeat (2) @ (posedge Q.HCLK)   /*this.Q.HRESET <=0; */            // disabling the reset
+            count = 0;
+//              
+             @ (posedge Q.HCLK) 
+            forever begin
+             
+              
+               fork
+     
+///*****************************************************************************
+//*	
+//*		   TEST bench acting as slave
+//*
+//*****************************************************************************/
+
+                    memory();
+                    memory1();
+               
+                    
+                join
+                 #1;// assign after 1 time unit   
+                end
+        
+            seq_item_port.item_done();
+    endtask : run_phase
+    
+    
+endclass :lcd_driver_1
+
+`include "lcduvm2.svp"
+
+class lcd_monitor extends uvm_monitor;
+
+    `uvm_component_utils(lcd_monitor)
+    virtual LCDOUT lcdout;
+    virtual AHBIF Q;
+    
+    lcd_seq_item l_sq;
+    logic [31:0]count;
+    
+    uvm_analysis_port #(lcd_seq_item) port1;
+    
+    function new (string name, uvm_component parent = null);
+        super.new(name,parent);
+    endfunction : new
+    
+    function void build_phase(uvm_phase phase);
+        super.build_phase(phase);
+        port1=new("port1",this);
+    endfunction :build_phase
+    
+    function void connect_phase (uvm_phase phase);
+        if(!uvm_config_db#(virtual LCDOUT)::get(null,"*","LCDOUT", lcdout)) begin
+			`uvm_fatal("LCD_MONITOR", "No virtual interface for the agent")
+			$display("failed to connect the interface 4");
+		end
+		if(!uvm_config_db #(virtual AHBIF)::get(null, "*", "AHBIF" , Q)) begin
+                `uvm_error(get_name(), "Virtual Interface for driver not set!")
+                $display("failed to connect the interface 3");
+        end
+    endfunction : connect_phase
+    
+    task lcd_collect;
+        @(posedge lcdout.LCDDCLK) // at posedge of LCDOUT clock sampling the LCDENA_LCDM and LCDVD
+           l_sq.act_data =  lcdout.LCDVD;
+           l_sq.pushout = lcdout.LCDENA_LCDM;
+                        //l_sq.frame_chk = lcdout.LCDFP;
+                   // $display("%m, @ %t LCDVDOUT = %h LCDENA_LCDM= %d" ,$time,l_sq.act_data,lcdout.LCDENA_LCDM);
+    endtask : lcd_collect
+    task vp_collect;
+        l_sq.count_fp = 0;
+       if(lcdout.LCDFP) begin
+           if(l_sq.count_fp == 0)begin
+            l_sq.count_fp =1; 
+           end
+        end
+            
+    endtask : vp_collect
+    task vp_count;
+      //  @(posedge lcdout.LCDFP)
+                        
+    endtask : vp_count
+    task run_phase(uvm_phase phase);
+        count = 0;
+          l_sq=new();
+        ////  l_sq.count_fp = 0;
+	`uvm_info("MONITOR","Monitor code goes here",UVM_LOW)
+        forever begin
+               fork
+
+                    lcd_collect();
+                
+                   // vp_collect();
+                 //   vp_count();
+                        port1.write(l_sq);
+               join
+              
+         end
+              
+    endtask : run_phase
+endclass:lcd_monitor
+
+class lcd_scoreboard extends uvm_scoreboard;
+    `uvm_component_utils(lcd_scoreboard)
+    uvm_tlm_analysis_fifo #(lcd_seq_item) port1_dest;
+    uvm_tlm_analysis_fifo #(lcd_seq_item) port2_dest;//not used
+    uvm_tlm_analysis_fifo #(lcd_seq_item) port3_dest;
+     uvm_analysis_port #(lcd_seq_item) port4;//not used
+    int fh,fh1,l,l1;
+    reg done,done2;
+    string ln,ln1,cd,tname;
+    reg [31:0] adr,dat;
+    lcd_seq_item l_sq_1,l_sq_2;
+    logic [31:0]exp_data[$];
+    logic [31:0]exp_value;
+    int dat_size, count;
+    int n,f,count_fp,compare;
+    int error_count;
+    logic flag,end_flag,start_flag;
+    
+    
+    function new (string name , uvm_component parent = null);
+        super.new(name,parent);
+    endfunction :new
+    function void build_phase (uvm_phase phase);
+        port1_dest=new("port1_dest", this);
+        port2_dest=new("port2_dest", this); //not used
+        port3_dest=new("port3_dest", this);
+        port4 = new("port4",this);//not used
+    endfunction: build_phase
+    
+    task run_phase(uvm_phase phase);
+    error_count=0;
+    flag =0;
+    end_flag =0;
+    start_flag=1;
+    fork 
+      $value$plusargs("tname=%s",tname);
+      fh = $fopen(tname,"r"); 
+      fh1 =$fopen(tname,"r");
+       done = 0;
+       done2 = 0;
+       count = 0;
+       
+       n=0;
+       phase.raise_objection(this,$sformatf("Starting the sequence for file %s",tname));
+       while(!done) begin
+             
+            cd ="q";
+            l=$fgets(ln,fh);
+            l=$sscanf(ln,"%s %h %h",cd,adr,dat);
+            if(cd=="q") begin
+                done=1;
+            end else if (cd  == "d")begin
+                exp_data.push_back(adr);
+             //   $display("Hola exp_data = %h ",adr);
+            end 
+                
+        end
+        while(!done2) begin
+            cd ="q";
+            l1=$fgets(ln1,fh1);
+            l1=$sscanf(ln1,"%s %d %d",cd,adr,dat);
+            if(cd=="q") begin
+                done2=1;
+            end else if (cd  == "a")begin
+
+                dat_size = adr;
+                $display("dat_size %d",dat_size);
+            end else if(cd == "n") begin
+                n = adr -1;
+                $display("n = %d", n);
+            end else if(cd == "f") begin
+                f = adr;
+                $display("f = %d", f);
+            end
+        end
+       join 
+       l_sq_1 = new();
+       l_sq_2 = new();
+      // fork
+       forever begin
+             port1_dest.get(l_sq_1);
+             
+                
+               
+                if(l_sq_1.pushout) begin // checking if at posedge of LCDOUT clock , LCDENA_LCDM is 1
+                 //   port2_dest.get(l_sq_2);
+                    if(l_sq_1.count >= n*dat_size && l_sq_1.count < (n+1)*dat_size ) begin // check that the third frame is the correct frame.
+                            l_sq_1.count ++;
+                            exp_value=exp_data.pop_front(); // taking expected value into a register
+                            if(exp_value !== l_sq_1.act_data) begin // if the recieved output and expected out does not match generating a error and ending the simulation
+                                `uvm_error("ERROR", $sformatf("Error expected %h got %h",exp_value,l_sq_1.act_data))
+                                error_count++;
+                            end else begin
+                                `uvm_info("EXPECTED", $sformatf("Expected %h got %h",exp_value,l_sq_1.act_data),UVM_LOW)
+                            end
+                     end else begin
+                        l_sq_1.count ++;
+                        // $display("count %h", count);
+                     end
+                end
+               
+              port3_dest.get(l_sq_2);
+              if(exp_data.size() == 0)begin
+                    flag =1;
+              end
+              if(error_count == 5) begin
+                  `uvm_error("ERROR","QUIT count reached")
+                  $display("\n\n*************************************************************\n\tOOPS SIMULATION FAILED\n*************************************************************\n\n");
+                  phase.drop_objection(this,$sformatf("Droped the sequence %s",tname));
+              
+              end
+            if(l_sq_1.count == n*dat_size && start_flag) begin   
+                if(l_sq_2.frame_chk)begin
+                    $display("Start");
+                    count_fp =l_sq_2.count;
+                    start_flag = 0;
+                    
+                end
+            end else begin
+                if(flag)begin
+                   if(l_sq_2.frame_chk)begin
+                    compare=l_sq_2.count-count_fp;
+                    end_flag =1;
+                    $display("End");
+                end 
+                end
+            end
+            
+           if(end_flag) begin
+            if(compare != f)  begin // All expected data flushed out indicates simulation completed.
+                
+                    `uvm_error("VERTICAL SYNC", $sformatf("Error Expected %d got %d",f,compare))
+                    $display("\n\n*************************************************************\n\tOOPS SIMULATION FAILED\n*************************************************************\n\n");
+                        phase.drop_objection(this,$sformatf("Droped the sequence %s",tname));
+            end else begin
+                if(exp_data.size() != 0)begin
+                  
+                        `uvm_error("VERTICAL SYNC",$sformatf("All data not pushed out before vertical sync")) 
+                          $display("\n\n*************************************************************\n\tOOPS SIMULATION FAILED\n*************************************************************\n\n");  
+                            phase.drop_objection(this,$sformatf("Finished the sequence %s",tname));
+                   
+                end else begin
+                    $display("\n\n**************************************\n\n\t\tOOH What Happiness you pass the simulation\n\n********************************************");
+
+                            phase.drop_objection(this,$sformatf("Finished the sequence %s",tname));
+                end
+            end
+            end
+            #1;
+      end
+      
+            
+   // join
+       
+        
+    endtask : run_phase
+endclass : lcd_scoreboard
+
+class lcd_agent_1 extends uvm_agent;
+
+    `uvm_component_utils(lcd_agent_1)
+    virtual AHBIF Q; // interface handle
+    virtual LCDOUT lcdout;
+    lcd_sequencer l_sqr_1;//sequencer handle
+    lcd_driver_1 l_drv_1; //driver handle
+    lcd_monitor l_mon;//monitor handle
+    lcd_scoreboard l_scr;
+    function new (string name , uvm_component parent = null);
+        super.new(name,parent);
+    endfunction : new
+    
+    function void build_phase (uvm_phase phase);
+        super.build_phase(phase);
+        //building the  sequencer and driver or making object of the classes
+        l_sqr_1 = lcd_sequencer::type_id::create("l_sqr_1",this);
+        l_drv_1 = lcd_driver_1::type_id::create("l_drv_1", this);
+        l_mon=lcd_monitor::type_id::create("l_mon",this);
+        l_scr = lcd_scoreboard::type_id::create("l_scr",this);
+        if(!uvm_config_db#(virtual AHBIF)::get(null,"*","AHBIF", Q)) begin
+			`uvm_fatal("LCD/AGT/No_VIF", "No virtual interface for the agent")
+			$display("failed to connect the interface 2");
+		end
+		 if(!uvm_config_db#(virtual LCDOUT)::get(null,"*","LCDOUT", lcdout)) begin
+			`uvm_fatal("LCD_MONITOR", "No virtual interface for the agent")
+			$display("failed to connect the interface 4");
+		end
+		//setting configuration database for the child classes of agent
+		//uvm_config_db#(virtual AHBIF)::set(this,"l_drv_1", "AHBIF",Q);
+    endfunction : build_phase
+
+    function void connect_phase(uvm_phase phase);
+        // connecting the port of driver with export of sequence.
+        //making a connection for transaction to flow.
+        l_drv_1.seq_item_port.connect(l_sqr_1.seq_item_export);
+        l_mon.port1.connect(l_scr.port1_dest.analysis_export);
+    endfunction : connect_phase
+endclass : lcd_agent_1
+
+
+class lcd_env extends uvm_env;
+    
+    `uvm_component_utils(lcd_env)
+    lcd_agent_1 l_agt_1;
+    lcd_agent_2 l_agt_2;
+    function new (string name , uvm_component parent = null);
+        super.new(name, parent);
+    endfunction : new
+    
+    function void build_phase (uvm_phase phase);
+        super.build_phase(phase);
+        l_agt_1  = lcd_agent_1::type_id::create("l_agt_1",this);
+        l_agt_2  = lcd_agent_2::type_id::create("l_agt_2",this);
+    endfunction : build_phase
+    
+    function void connect_phase(uvm_phase phase);
+        // connecting the montiors and scoreboard in this block
+     l_agt_2.l_drv_2.port2.connect(l_agt_1.l_scr.port2_dest.analysis_export); //not used
+      l_agt_2.l_mntr_2.port3.connect(l_agt_1.l_scr.port3_dest.analysis_export);
+      l_agt_1.l_scr.port4.connect(l_agt_2.l_mntr_2.port4_dest.analysis_export); //not used
+    endfunction : connect_phase
+endclass : lcd_env
+
+class lcd_test extends uvm_test;
+
+    `uvm_component_utils(lcd_test)
+
+    virtual AHBIF Q;
+    virtual LCDOUT lcdout;
+    lcd_env l_env;
+    lcd_agent_1 l_agt_1;
+    lcd_agent_2 l_agt_2;
+    lcd_sequencer l_sqr_1,l_sqr_2;
+    
+    
+    function new (string name, uvm_component parent = null);
+        super.new(name,parent);
+    endfunction : new
+    
+    function void build_phase(uvm_phase phase);
+        super.build_phase(phase);
+
+        l_env=lcd_env::type_id::create("l_env",this);
+
+        if (!uvm_config_db #(virtual AHBIF)::get(null, "*", "AHBIF", Q)) begin
+       			`uvm_fatal(this.get_name(), "No virtual interface specified for this test instance")
+       			$display("failed to connect the interface 1");
+    		end 
+    		 if(!uvm_config_db#(virtual LCDOUT)::get(null,"*","LCDOUT", lcdout)) begin
+			`uvm_fatal("LCD_MONITOR", "No virtual interface for the agent")
+			$display("failed to connect the interface 4");
+		end
+    		//uvm_config_db#(virtual AHBIF)::set( this, "l_env", "AHBIF", Q);
+    endfunction : build_phase
+
+    task run_phase(uvm_phase phase);
+        lcd_sequence_1 l_seq_1;
+        lcd_sequence_2 l_seq_2;
+        l_seq_1 = lcd_sequence_1::type_id::create("l_seq_1");
+        l_seq_2 = lcd_sequence_2::type_id::create("l_seq_2");
+        fork 
+        l_seq_1.start(l_env.l_agt_1.l_sqr_1);
+        `uvm_info("INITIAL",$sformatf("Starting the sequence at time : %t", $time),UVM_LOW)
+        l_seq_2.start(l_env.l_agt_2.l_sqr_2);
+        join
+        
+    endtask : run_phase
+endclass: lcd_test
+endpackage : lcd_pkg
