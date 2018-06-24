@@ -4,18 +4,10 @@ This is Read Me file
 #######################################################
 /***************************************************************************************************************************************
 * PROJECT NAME: LCD CONTROLLER TESTBENCH     DATE:12/01/2017
-* CREATED BY: SARVESH DATAR, SHYAM REKHAWAR, MANC WARDE
+* CREATED BY: SARVESH DATAR
 * DESCRIPTION: THIS TESTBENCH ACTS AS MEMORY MODULE FOR THE DUT AND ALSO AS MASTER FOR LADING THE CONFIGURATION REGISTERS OF THE DUT
 *              THE TESTBENCH CHECKS THE FUNCTIONALITY OF LCD CONTROLLER.
 ***************************************************************************************************************************************/
-WHAT PASSED / WHAT DID NOT:
-	In the Project, DUT0/LCD0  passes for all the test cases.
-
-	DUT1/LCD1 passes for testcase t0-t3 and t12-t15 and fails for t4-t11
-
-	DUT2/LCD2 fails for all the test cases.
-
-	DUT3/LCD3 fails for all testcases due to Vertical Sync pulse failure.
 FILES:
 	tblcd.sv:
 		Contains the top level module.
